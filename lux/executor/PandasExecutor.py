@@ -23,6 +23,9 @@ from lux.utils.utils import check_import_lux_widget, check_if_id_like
 from lux.utils.date_utils import is_datetime_series
 import warnings
 
+# for benchmarking
+import time
+
 
 class PandasExecutor(Executor):
     """
@@ -39,7 +42,7 @@ class PandasExecutor(Executor):
     def execute_sampling(ldf: LuxDataFrame):
         # General Sampling for entire dataframe
         SAMPLE_START = 10000
-        SAMPLE_CAP = 30000
+        SAMPLE_CAP = 5000000
         SAMPLE_FRAC = 0.75
         if len(ldf) > SAMPLE_CAP:
             if ldf._sampled is None:  # memoize unfiltered sample df
@@ -92,9 +95,41 @@ class PandasExecutor(Executor):
             # TODO: Add some type of cap size on Nrows ?
             vis._vis_data = vis.data[list(attributes)]
             if vis.mark == "bar" or vis.mark == "line":
+                start = time.time()
                 PandasExecutor.execute_aggregate(vis, isFiltered=filter_executed)
+                end = time.time()
+                # append benchmark data to file
+                benchmark_data = {
+                    "executor_name": ["Pandas"],
+                    "query_action": ["bar/line"],
+                    "time": [end - start],
+                    "length": [ldf.length],
+                }
+                benchmark_df = pd.DataFrame(data=benchmark_data)
+                benchmark_df.to_csv(
+                    "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+                    mode="a",
+                    header=False,
+                    index=False,
+                )
             elif vis.mark == "histogram":
+                start = time.time()
                 PandasExecutor.execute_binning(vis)
+                end = time.time()
+                # append benchmark data to file
+                benchmark_data = {
+                    "executor_name": ["Pandas"],
+                    "query_action": ["histogram"],
+                    "time": [end - start],
+                    "length": [ldf.length],
+                }
+                benchmark_df = pd.DataFrame(data=benchmark_data)
+                benchmark_df.to_csv(
+                    "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+                    mode="a",
+                    header=False,
+                    index=False,
+                )
             elif vis.mark == "scatter":
                 HBIN_START = 5000
                 if len(ldf) > HBIN_START:
@@ -312,6 +347,7 @@ class PandasExecutor(Executor):
 
     @staticmethod
     def execute_2D_binning(vis: Vis):
+        start = time.time()
         pd.reset_option("mode.chained_assignment")
         with pd.option_context("mode.chained_assignment", None):
             x_attr = vis.get_attr_by_channel("x")[0].attribute
@@ -352,6 +388,21 @@ class PandasExecutor(Executor):
             result["yBinEnd"] = result["yBin"].apply(lambda x: x.right)
 
             vis._vis_data = result.drop(columns=["xBin", "yBin"])
+        end = time.time()
+        # append benchmark data to file
+        benchmark_data = {
+            "executor_name": ["Pandas"],
+            "query_action": ["2D_binning"],
+            "time": [end - start],
+            "length": [vis.data.length],
+        }
+        benchmark_df = pd.DataFrame(data=benchmark_data)
+        benchmark_df.to_csv(
+            "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+            mode="a",
+            header=False,
+            index=False,
+        )
 
     #######################################################
     ############ Metadata: data type, model #############
@@ -368,6 +419,7 @@ class PandasExecutor(Executor):
         from pandas.api.types import is_datetime64_any_dtype as is_datetime
 
         for attr in list(ldf.columns):
+            start = time.time()
             temporal_var_list = ["month", "year", "day", "date", "time"]
             if is_datetime(ldf[attr]):
                 ldf.data_type_lookup[attr] = "temporal"
@@ -401,6 +453,21 @@ class PandasExecutor(Executor):
                 ldf.data_type_lookup[attr] = "temporal"
             else:
                 ldf.data_type_lookup[attr] = "nominal"
+            end = time.time()
+            # append benchmark data to file
+            benchmark_data = {
+                "executor_name": ["Pandas"],
+                "query_action": ["data_type"],
+                "time": [end - start],
+                "length": [ldf.length],
+            }
+            benchmark_df = pd.DataFrame(data=benchmark_data)
+            benchmark_df.to_csv(
+                "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+                mode="a",
+                header=False,
+                index=False,
+            )
         # for attr in list(df.dtypes[df.dtypes=="int64"].keys()):
         #   if self.cardinality[attr]>50:
         if ldf.index.dtype != "int64" and ldf.index.name:
@@ -411,6 +478,7 @@ class PandasExecutor(Executor):
         for attr in ldf.columns:
             if ldf.data_type_lookup[attr] == "temporal" and not is_datetime(ldf[attr]):
                 non_datetime_attrs.append(attr)
+
         if len(non_datetime_attrs) == 1:
             warnings.warn(
                 f"\nLux detects that the attribute '{non_datetime_attrs[0]}' may be temporal.\n"
@@ -474,8 +542,39 @@ class PandasExecutor(Executor):
             else:
                 attribute_repr = attribute
 
+            start = time.time()
             ldf.unique_values[attribute_repr] = list(ldf[attribute_repr].unique())
+            end = time.time()
+            benchmark_data = {
+                "executor_name": ["Pandas"],
+                "query_action": ["unique_values"],
+                "time": [end - start],
+                "length": [ldf.length],
+            }
+            benchmark_df = pd.DataFrame(data=benchmark_data)
+            benchmark_df.to_csv(
+                "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+                mode="a",
+                header=False,
+                index=False,
+            )
+
+            start = time.time()
             ldf.cardinality[attribute_repr] = len(ldf.unique_values[attribute_repr])
+            end = time.time()
+            benchmark_data = {
+                "executor_name": ["Pandas"],
+                "query_action": ["cardinality"],
+                "time": [end - start],
+                "length": [ldf.length],
+            }
+            benchmark_df = pd.DataFrame(data=benchmark_data)
+            benchmark_df.to_csv(
+                "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+                mode="a",
+                header=False,
+                index=False,
+            )
 
             # commenting this optimization out to make sure I can filter by cardinality when showing recommended vis
 
@@ -486,9 +585,24 @@ class PandasExecutor(Executor):
             #     ldf.cardinality[attribute_repr] = 999 # special value for non-numeric attribute
 
             if ldf.dtypes[attribute] == "float64" or ldf.dtypes[attribute] == "int64":
+                start = time.time()
                 ldf._min_max[attribute_repr] = (
                     ldf[attribute].min(),
                     ldf[attribute].max(),
+                )
+                end = time.time()
+                benchmark_data = {
+                    "executor_name": ["Pandas"],
+                    "query_action": ["min_max"],
+                    "time": [end - start],
+                    "length": [ldf.length],
+                }
+                benchmark_df = pd.DataFrame(data=benchmark_data)
+                benchmark_df.to_csv(
+                    "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+                    mode="a",
+                    header=False,
+                    index=False,
                 )
 
         if ldf.index.dtype != "int64":

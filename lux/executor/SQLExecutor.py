@@ -48,32 +48,101 @@ class SQLExecutor(Executor):
         for vis in vislist:
             # Select relevant data based on attribute information
             attributes = set([])
-            for clause in vis._inferred_intent:
+
+            for clause in view._inferred_intent:
                 if clause.attribute:
                     if clause.attribute == "Record":
                         attributes.add(clause.attribute)
-                    # else:
-                    attributes.add(clause.attribute)
-            if vis.mark not in ["bar", "line", "histogram"]:
-                where_clause, filterVars = SQLExecutor.execute_filter(vis)
-                required_variables = attributes | set(filterVars)
-                required_variables = ",".join(required_variables)
-                row_count = list(
-                    pd.read_sql(
-                        f"SELECT COUNT(*) FROM {ldf.table_name} {where_clause}",
-                        ldf.SQLconnection,
-                    )["count"]
-                )[0]
-                if row_count > 10000:
-                    query = f"SELECT {required_variables} FROM {ldf.table_name} {where_clause} ORDER BY random() LIMIT 10000"
-                else:
-                    query = f"SELECT {required_variables} FROM {ldf.table_name} {where_clause}"
-                data = pd.read_sql(query, ldf.SQLconnection)
-                vis._vis_data = utils.pandas_to_lux(data)
-            if vis.mark == "bar" or vis.mark == "line":
-                SQLExecutor.execute_aggregate(vis, ldf)
-            elif vis.mark == "histogram":
-                SQLExecutor.execute_binning(vis, ldf)
+
+            if view.mark == "scatter":
+                view._mark = "heatmap"
+                start = time.time()
+                SQLExecutor.execute_2D_binning(view, ldf)
+                end = time.time()
+                print(end - start)
+            #     start = time.time()
+            #     where_clause, filterVars = SQLExecutor.execute_filter(view)
+
+            #     length_query = pandas.read_sql(
+            #         "SELECT COUNT(*) as length FROM {} {}".format(
+            #             ldf.table_name, where_clause
+            #         ),
+            #         ldf.SQLconnection,
+            #     )
+
+            #     #SQLExecutor.execute_2D_binning(view, ldf)
+            #     required_variables = attributes | set(filterVars)
+            #     required_variables = ",".join(required_variables)
+            #     row_count = list(
+            #         pandas.read_sql(
+            #             "SELECT COUNT(*) FROM {} {}".format(
+            #                 ldf.table_name, where_clause
+            #             ),
+            #             ldf.SQLconnection,
+            #         )["count"]
+            #     )[0]
+            #     if row_count > 10000000:
+            #         query = "SELECT {} FROM {} {} ORDER BY random() LIMIT 10000".format(
+            #             required_variables, ldf.table_name, where_clause
+            #         )
+            #     else:
+            #         query = "SELECT {} FROM {} {}".format(
+            #             required_variables, ldf.table_name, where_clause
+            #         )
+            #     data = pandas.read_sql(query, ldf.SQLconnection)
+            #     view._vis_data = utils.pandas_to_lux(data)
+            #     view._vis_data.length = list(length_query["length"])[0]
+            #     end = time.time()
+            #     # append benchmark data to file
+            #     benchmark_data = {
+            #         "executor_name": ["SQL"],
+            #         "query_action": ["scatter"],
+            #         "time": [end - start],
+            #         "length": [ldf.length],
+            #     }
+            #     benchmark_df = pandas.DataFrame(data=benchmark_data)
+            #     benchmark_df.to_csv(
+            #         "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+            #         mode="a",
+            #         header=False,
+            #         index=False,
+            #     )
+            # if view.mark == "bar" or view.mark == "line":
+            #     start = time.time()
+            #     SQLExecutor.execute_aggregate(view, ldf)
+            #     end = time.time()
+            #     # append benchmark data to file
+            #     benchmark_data = {
+            #         "executor_name": ["SQL"],
+            #         "query_action": ["bar/line"],
+            #         "time": [end - start],
+            #         "length": [ldf.length],
+            #     }
+            #     benchmark_df = pandas.DataFrame(data=benchmark_data)
+            #     benchmark_df.to_csv(
+            #         "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+            #         mode="a",
+            #         header=False,
+            #         index=False,
+            #     )
+            # elif view.mark == "histogram":
+            #     start = time.time()
+            #     SQLExecutor.execute_binning(view, ldf)
+            #     end = time.time()
+            #     # append benchmark data to file
+            #     benchmark_data = {
+            #         "executor_name": ["SQL"],
+            #         "query_action": ["histogram"],
+            #         "time": [end - start],
+            #         "length": [ldf.length],
+            #     }
+            #     benchmark_df = pandas.DataFrame(data=benchmark_data)
+            #     benchmark_df.to_csv(
+            #         "C:/Users/thyne/Documents/GitHub/thyne-lux/sql_benchmarking.csv",
+            #         mode="a",
+            #         header=False,
+            #         index=False,
+            #     )
 
     @staticmethod
     def execute_aggregate(vis: Vis, ldf: LuxDataFrame):
@@ -164,26 +233,130 @@ class SQLExecutor(Executor):
                 bin_centers,
                 np.mean(np.vstack([upper_edges[0:-1], upper_edges[1:]]), axis=0),
             )
-            if attr_type == int:
-                bin_centers = np.append(
-                    bin_centers,
-                    math.ceil((upper_edges[len(upper_edges) - 1] + attr_max) / 2),
+
+        if len(bin_centers) > len(bin_count_data):
+            bucket_lables = bin_count_data["width_bucket"].unique()
+            for i in range(0, len(bin_centers)):
+                if i not in bucket_lables:
+                    bin_count_data = bin_count_data.append(
+                        pandas.DataFrame([[i, 0]], columns=bin_count_data.columns)
+                    )
+        view._vis_data = pandas.DataFrame(
+            np.array([bin_centers, list(bin_count_data["count"])]).T,
+            columns=[bin_attribute.attribute, "Number of Records"],
+        )
+        view._vis_data = utils.pandas_to_lux(view.data)
+        view._vis_data.length = list(length_query["length"])[0]
+
+    @staticmethod
+    def execute_2D_binning(view: Vis, ldf: LuxDataFrame):
+        import numpy as np
+
+        x_attribute = list(filter(lambda x: x.channel == "x", view._inferred_intent))[0]
+
+        y_attribute = list(filter(lambda x: x.channel == "y", view._inferred_intent))[0]
+
+        num_bins = 40
+        x_attr_min = ldf._min_max[x_attribute.attribute][0]
+        x_attr_max = ldf._min_max[x_attribute.attribute][1]
+        x_attr_type = type(ldf.unique_values[x_attribute.attribute][0])
+
+        y_attr_min = ldf._min_max[y_attribute.attribute][0]
+        y_attr_max = ldf._min_max[y_attribute.attribute][1]
+        y_attr_type = type(ldf.unique_values[y_attribute.attribute][0])
+
+        # get filters if available
+        where_clause, filterVars = SQLExecutor.execute_filter(view)
+
+        # length_query = pandas.read_sql(
+        #     "SELECT COUNT(*) as length FROM {} {}".format(ldf.table_name, where_clause),
+        #     ldf.SQLconnection,
+        # )
+
+        # need to calculate the bin edges before querying for the relevant data
+        x_bin_width = (x_attr_max - x_attr_min) / num_bins
+        y_bin_width = (y_attr_max - y_attr_min) / num_bins
+
+        x_upper_edges = []
+        y_upper_edges = []
+        for e in range(1, num_bins + 1):
+            x_curr_edge = x_attr_min + e * x_bin_width
+            y_curr_edge = y_attr_min + e * y_bin_width
+            # get upper edges for x attribute bins
+            if x_attr_type == int:
+                x_upper_edges.append(str(math.ceil(x_curr_edge)))
+            else:
+                x_upper_edges.append(str(x_curr_edge))
+
+            # get upper edges for y attribute bins
+            if y_attr_type == int:
+                y_upper_edges.append(str(math.ceil(y_curr_edge)))
+            else:
+                y_upper_edges.append(str(y_curr_edge))
+        x_upper_edges_string = ",".join(x_upper_edges)
+        y_upper_edges_string = ",".join(y_upper_edges)
+
+        # view_filter, filter_vars = SQLExecutor.execute_filter(view)
+
+        # create a new where clause that will include the filter for each x axis bin
+        bin_count_data = []
+        for c in range(0, len(y_upper_edges)):
+            if len(where_clause) > 1:
+                bin_where_clause = where_clause + " AND "
+            else:
+                bin_where_clause = "WHERE "
+            if c == 0:
+                lower_bound = x_attr_min
+                lower_bound_clause = (
+                    x_attribute.attribute + " >= " + "'" + str(lower_bound) + "'"
                 )
             else:
-                bin_centers = np.append(bin_centers, (upper_edges[len(upper_edges) - 1] + attr_max) / 2)
-
-            if len(bin_centers) > len(bin_count_data):
-                bucket_lables = bin_count_data["width_bucket"].unique()
-                for i in range(0, len(bin_centers)):
-                    if i not in bucket_lables:
-                        bin_count_data = bin_count_data.append(
-                            pd.DataFrame([[i, 0]], columns=bin_count_data.columns)
-                        )
-            vis._vis_data = pd.DataFrame(
-                np.array([bin_centers, list(bin_count_data["count"])]).T,
-                columns=[bin_attribute.attribute, "Number of Records"],
+                lower_bound = x_upper_edges[c - 1]
+                lower_bound_clause = (
+                    x_attribute.attribute + " >= " + "'" + str(lower_bound) + "'"
+                )
+            upper_bound = x_upper_edges[c]
+            upper_bound_clause = (
+                x_attribute.attribute + " < " + "'" + str(upper_bound) + "'"
             )
-            vis._vis_data = utils.pandas_to_lux(vis.data)
+
+            # adjust bound typing to match Database type
+            if x_attr_type == "int":
+                lower_bound = int(lower_bound)
+                upper_bound = int(upper_bound)
+            else:
+                lower_bound = float(lower_bound)
+                upper_bound = float(upper_bound)
+            bin_where_clause = (
+                bin_where_clause + lower_bound_clause + " AND " + upper_bound_clause
+            )
+
+            bin_count_query = "SELECT width_bucket, COUNT(width_bucket) FROM (SELECT width_bucket({}, '{}') FROM {} {}) as Buckets GROUP BY width_bucket ORDER BY width_bucket".format(
+                y_attribute.attribute,
+                "{" + y_upper_edges_string + "}",
+                ldf.table_name,
+                bin_where_clause,
+            )
+            curr_column_data = pandas.read_sql(bin_count_query, ldf.SQLconnection)
+            curr_column_data = curr_column_data[
+                curr_column_data["width_bucket"] != num_bins
+            ]
+            if len(curr_column_data) > 0:
+                # better way to handle this? why is there an extra width bucket being made ##################################################
+                curr_column_data["xBinStart"] = lower_bound
+                curr_column_data["xBinEnd"] = upper_bound
+                curr_column_data["yBinStart"] = curr_column_data.apply(
+                    lambda row: float(y_upper_edges[int(row["width_bucket"])])
+                    - y_bin_width,
+                    axis=1,
+                )
+                curr_column_data["yBinEnd"] = curr_column_data.apply(
+                    lambda row: float(y_upper_edges[int(row["width_bucket"])]), axis=1
+                )
+                bin_count_data.append(curr_column_data)
+        output = pandas.concat(bin_count_data)
+        output = output.drop(["width_bucket"], axis=1).to_pandas()
+        view._vis_data = utils.pandas_to_lux(output)
 
     @staticmethod
     # takes in a vis and returns an appropriate SQL WHERE clause that based on the filters specified in the vis's _inferred_intent
