@@ -13,6 +13,7 @@
 #  limitations under the License.
 
 import pandas as pd
+import numpy as np
 import altair as alt
 from lux.utils.date_utils import compute_date_granularity
 
@@ -87,7 +88,7 @@ class AltairChart:
                 timeUnit = compute_date_granularity(self.vis.data[color_attr_name])
                 self.chart = self.chart.encode(
                     color=alt.Color(
-                        color_attr_name,
+                        str(color_attr_name),
                         type=color_attr_type,
                         timeUnit=timeUnit,
                         title=color_attr_name,
@@ -95,7 +96,9 @@ class AltairChart:
                 )
                 self.code += f"chart = chart.encode(color=alt.Color('{color_attr_name}',type='{color_attr_type}',timeUnit='{timeUnit}',title='{color_attr_name}'))"
             else:
-                self.chart = self.chart.encode(color=alt.Color(color_attr_name, type=color_attr_type))
+                self.chart = self.chart.encode(
+                    color=alt.Color(str(color_attr_name), type=color_attr_type)
+                )
                 self.code += f"chart = chart.encode(color=alt.Color('{color_attr_name}',type='{color_attr_type}'))\n"
         elif len(color_attr) > 1:
             raise ValueError(
@@ -111,3 +114,15 @@ class AltairChart:
 
     def initialize_chart(self):
         return NotImplemented
+
+    @classmethod
+    def sanitize_dataframe(self, df):
+        for attr in df.columns:
+            # Check if dtype is unrecognized by Altair (#247)
+            if str(df[attr].dtype) == "Float64":
+                df[attr] = df[attr].astype(np.float64)
+
+            # Altair can not visualize non-string columns
+            # convert all non-string columns in to strings
+            df = df.rename(columns={attr: str(attr)})
+        return df

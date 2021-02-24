@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 def convert_to_list(x):
@@ -57,16 +58,17 @@ def check_import_lux_widget():
 
 
 def get_agg_title(clause):
+    attr = str(clause.attribute)
     if clause.aggregation is None:
-        if len(clause.attribute) > 25:
-            return clause.attribute[:15] + "..." + clause.attribute[-10:]
-        return f"{clause.attribute}"
-    elif clause.attribute == "Record":
+        if len(attr) > 25:
+            return attr[:15] + "..." + attr[-10:]
+        return f"{attr}"
+    elif attr == "Record":
         return f"Number of Records"
     else:
-        if len(clause.attribute) > 15:
-            return f"{clause._aggregation_name.capitalize()} of {clause.attribute[:15]}..."
-        return f"{clause._aggregation_name.capitalize()} of {clause.attribute}"
+        if len(attr) > 15:
+            return f"{clause._aggregation_name.capitalize()} of {attr[:15]}..."
+        return f"{clause._aggregation_name.capitalize()} of {attr}"
 
 
 def check_if_id_like(df, attribute):
@@ -75,7 +77,7 @@ def check_if_id_like(df, attribute):
     # Strong signals
     # so that aggregated reset_index fields don't get misclassified
     high_cardinality = df.cardinality[attribute] > 500
-    attribute_contain_id = re.search(r"id", str(attribute)) is not None
+    attribute_contain_id = re.search(r"id|ID|iD|Id", str(attribute)) is not None
     almost_all_vals_unique = df.cardinality[attribute] >= 0.98 * len(df)
     is_string = pd.api.types.is_string_dtype(df[attribute])
     if is_string:
@@ -91,8 +93,15 @@ def check_if_id_like(df, attribute):
             and str_length_uniformity
         )
     else:
-        # TODO: Could probably add some type of entropy measure (since the binned id fields are usually very even)
-        return high_cardinality and (attribute_contain_id or almost_all_vals_unique)
+        if len(df) >= 2:
+            series = df[attribute]
+            diff = series.diff()
+            evenly_spaced = all(diff.iloc[1:] == diff.iloc[1])
+        else:
+            evenly_spaced = True
+        if attribute_contain_id:
+            almost_all_vals_unique = df.cardinality[attribute] >= 0.75 * len(df)
+        return high_cardinality and (almost_all_vals_unique or evenly_spaced)
 
 
 def like_nan(val):
@@ -102,3 +111,13 @@ def like_nan(val):
         import math
 
         return math.isnan(val)
+
+
+def matplotlib_setup(w, h):
+    plt.ioff()
+    fig, ax = plt.subplots(figsize=(w, h))
+    ax.set_axisbelow(True)
+    ax.grid(color="#dddddd")
+    ax.spines["right"].set_color("#dddddd")
+    ax.spines["top"].set_color("#dddddd")
+    return fig, ax

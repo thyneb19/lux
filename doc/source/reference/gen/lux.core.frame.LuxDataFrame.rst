@@ -171,11 +171,12 @@ lux.core.frame.LuxDataFrame
       ~LuxDataFrame.rsub
       ~LuxDataFrame.rtruediv
       ~LuxDataFrame.sample
+      ~LuxDataFrame.save_as_html
       ~LuxDataFrame.select_dtypes
       ~LuxDataFrame.sem
-      ~LuxDataFrame.set_SQL_connection
+      ~LuxDataFrame.set_SQL_table
       ~LuxDataFrame.set_axis
-      ~LuxDataFrame.set_executor_type
+      ~LuxDataFrame.set_data_type
       ~LuxDataFrame.set_index
       ~LuxDataFrame.set_intent
       ~LuxDataFrame.set_intent_as_vis
@@ -246,6 +247,7 @@ lux.core.frame.LuxDataFrame
       ~LuxDataFrame.axes
       ~LuxDataFrame.columns
       ~LuxDataFrame.current_vis
+      ~LuxDataFrame.data_type
       ~LuxDataFrame.dtypes
       ~LuxDataFrame.empty
       ~LuxDataFrame.exported

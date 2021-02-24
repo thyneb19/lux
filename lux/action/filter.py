@@ -21,7 +21,7 @@ from lux.utils import utils
 from lux.utils.utils import get_filter_specs
 
 
-def filter(ldf):
+def add_filter(ldf):
     """
     Iterates over all possible values of a categorical variable and generates visualizations where each categorical value filters the data.
 
@@ -45,10 +45,11 @@ def filter(ldf):
         # get unique values for all categorical values specified and creates corresponding filters
         fltr = filters[0]
 
-        if ldf.data_type_lookup[fltr.attribute] == "nominal":
+        if ldf.data_type[fltr.attribute] == "nominal":
             recommendation = {
                 "action": "Filter",
                 "description": f"Changing the <p class='highlight-intent'>{fltr.attribute}</p> filter to an alternative value.",
+                "long_description": f"Swap out the filter value for {fltr.attribute} to other possible values, while keeping all else the same. Visualizations are ranked based on interestingness",
             }
             unique_values = ldf.unique_values[fltr.attribute]
             filter_values.append(fltr.value)
@@ -60,10 +61,11 @@ def filter(ldf):
                     new_spec.append(new_filter)
                     temp_vis = Vis(new_spec)
                     output.append(temp_vis)
-        elif ldf.data_type_lookup[fltr.attribute] == "quantitative":
+        elif ldf.data_type[fltr.attribute] == "quantitative":
             recommendation = {
                 "action": "Filter",
                 "description": f"Changing the <p class='highlight-intent'>{fltr.attribute}</p> filter to an alternative inequality operation.",
+                "long_description": f"Changing the <p class='highlight-intent'>{fltr.attribute}</p> filter to an alternative inequality operation.",
             }
 
             def get_complementary_ops(fltr_op):
@@ -91,7 +93,7 @@ def filter(ldf):
     else:
         intended_attrs = ", ".join(
             [
-                clause.attribute
+                str(clause.attribute)
                 for clause in ldf._intent
                 if clause.value == "" and clause.attribute != "Record"
             ]
@@ -99,6 +101,7 @@ def filter(ldf):
         recommendation = {
             "action": "Filter",
             "description": f"Applying filters to the <p class='highlight-intent'>{intended_attrs}</p> intent.",
+            "long_description": f"Adding any filter while keeping the attributes on the x and y axes fixed. Visualizations are ranked based on interestingness",
         }
         categorical_vars = []
         for col in list(ldf.columns):
@@ -122,6 +125,7 @@ def filter(ldf):
         recommendation = {
             "action": "Similarity",
             "description": "Show other charts that are visually similar to the Current vis.",
+            "long_description": "Show other charts that are visually similar to the Current vis.",
         }
         last = get_filter_specs(ldf.intent)[-1]
         output = ldf.intent.copy()[0:-1]
@@ -132,7 +136,8 @@ def filter(ldf):
     vlist_copy = lux.vis.VisList.VisList(output, ldf)
     for i in range(len(vlist_copy)):
         vlist[i].score = interestingness(vlist_copy[i], ldf)
-    vlist = vlist.topK(15)
+    vlist.sort()
+    vlist = vlist.showK()
     if recommendation["action"] == "Similarity":
         recommendation["collection"] = vlist[1:]
     else:

@@ -16,6 +16,7 @@ from typing import List, Callable, Union
 from lux.vis.Clause import Clause
 from lux.utils.utils import check_import_lux_widget
 import lux
+import warnings
 
 
 class Vis:
@@ -24,12 +25,10 @@ class Vis:
     """
 
     def __init__(self, intent, source=None, title="", score=0.0):
-        self._intent = intent  # This is the user's original intent to Vis
-        self._inferred_intent = intent  # This is the re-written, expanded version of user's original intent (include inferred vis info)
-        self._source = source  # This is the original data that is attached to the Vis
-        self._vis_data = (
-            None  # This is the data that represents the Vis (e.g., selected, aggregated, binned)
-        )
+        self._intent = intent  # user's original intent to Vis
+        self._inferred_intent = intent  # re-written, expanded version of user's original intent
+        self._source = source  # original data attached to the Vis
+        self._vis_data = None  # processed data for Vis (e.g., selected, aggregated, binned)
         self._code = None
         self._mark = ""
         self._min_max = {}
@@ -39,39 +38,42 @@ class Vis:
         self.refresh_source(self._source)
 
     def __repr__(self):
-        if self._source is None:
-            return f"<Vis  ({str(self._intent)}) mark: {self._mark}, score: {self.score} >"
-        filter_intents = None
-        channels, additional_channels = [], []
-        for clause in self._inferred_intent:
+        all_clause = all([isinstance(unit, lux.Clause) for unit in self._inferred_intent])
+        if all_clause:
+            filter_intents = None
+            channels, additional_channels = [], []
+            for clause in self._inferred_intent:
 
-            if hasattr(clause, "value"):
-                if clause.value != "":
-                    filter_intents = clause
-            if hasattr(clause, "attribute"):
-                if clause.attribute != "":
-                    if clause.aggregation != "" and clause.aggregation is not None:
-                        attribute = clause._aggregation_name.upper() + "(" + clause.attribute + ")"
-                    elif clause.bin_size > 0:
-                        attribute = "BIN(" + clause.attribute + ")"
-                    else:
-                        attribute = clause.attribute
-                    if clause.channel == "x":
-                        channels.insert(0, [clause.channel, attribute])
-                    elif clause.channel == "y":
-                        channels.insert(1, [clause.channel, attribute])
-                    elif clause.channel != "":
-                        additional_channels.append([clause.channel, attribute])
+                if hasattr(clause, "value"):
+                    if clause.value != "":
+                        filter_intents = clause
+                if hasattr(clause, "attribute"):
+                    if clause.attribute != "":
+                        if clause.aggregation != "" and clause.aggregation is not None:
+                            attribute = f"{clause._aggregation_name.upper()}({clause.attribute})"
+                        elif clause.bin_size > 0:
+                            attribute = f"BIN({clause.attribute})"
+                        else:
+                            attribute = clause.attribute
+                        if clause.channel == "x":
+                            channels.insert(0, [clause.channel, attribute])
+                        elif clause.channel == "y":
+                            channels.insert(1, [clause.channel, attribute])
+                        elif clause.channel != "":
+                            additional_channels.append([clause.channel, attribute])
 
-        channels.extend(additional_channels)
-        str_channels = ""
-        for channel in channels:
-            str_channels += channel[0] + ": " + channel[1] + ", "
+            channels.extend(additional_channels)
+            str_channels = ""
+            for channel in channels:
+                str_channels += f"{channel[0]}: {channel[1]}, "
 
-        if filter_intents:
-            return f"<Vis  ({str_channels[:-2]} -- [{filter_intents.attribute}{filter_intents.filter_op}{filter_intents.value}]) mark: {self._mark}, score: {self.score} >"
+            if filter_intents:
+                return f"<Vis  ({str_channels[:-2]} -- [{filter_intents.attribute}{filter_intents.filter_op}{filter_intents.value}]) mark: {self._mark}, score: {self.score} >"
+            else:
+                return f"<Vis  ({str_channels[:-2]}) mark: {self._mark}, score: {self.score} >"
         else:
-            return f"<Vis  ({str_channels[:-2]}) mark: {self._mark}, score: {self.score} >"
+            # When Vis not compiled (e.g., when self._source not populated), print original intent
+            return f"<Vis  ({str(self._intent)}) mark: {self._mark}, score: {self.score} >"
 
     @property
     def data(self):
@@ -235,6 +237,36 @@ class Vis:
         self._code = renderer.create_vis(self, standalone)
         return self._code
 
+    def to_matplotlib(self) -> str:
+        """
+        Generate minimal Matplotlib code to visualize the Vis
+
+        Returns
+        -------
+        str
+                String version of the Matplotlib code. Need to print out the string to apply formatting.
+        """
+        from lux.vislib.matplotlib.MatplotlibRenderer import MatplotlibRenderer
+
+        renderer = MatplotlibRenderer(output_type="matplotlib")
+        self._code = renderer.create_vis(self)
+        return self._code
+
+    def to_matplotlib_code(self) -> str:
+        """
+        Generate minimal Matplotlib code to visualize the Vis
+
+        Returns
+        -------
+        str
+                String version of the Matplotlib code. Need to print out the string to apply formatting.
+        """
+        from lux.vislib.matplotlib.MatplotlibRenderer import MatplotlibRenderer
+
+        renderer = MatplotlibRenderer(output_type="matplotlib_code")
+        self._code = renderer.create_vis(self)
+        return self._code
+
     def to_VegaLite(self, prettyOutput=True) -> Union[dict, str]:
         """
         Generate minimal Vega-Lite code to visualize the Vis
@@ -275,6 +307,15 @@ class Vis:
             return self.to_VegaLite(**kwargs)
         elif language == "altair":
             return self.to_Altair(**kwargs)
+        elif language == "matplotlib":
+            return self.to_matplotlib()
+        elif language == "matplotlib_code":
+            return self.to_matplotlib_code()
+        else:
+            warnings.warn(
+                "Unsupported plotting backend. Lux currently only support 'altair', 'vegalite', or 'matplotlib'",
+                stacklevel=2,
+            )
 
     def refresh_source(self, ldf):  # -> Vis:
         """
@@ -323,5 +364,8 @@ class Vis:
 
         for i in range(len(self._intent)):
             clause = self._intent[i]
-            if type(clause) != Clause and ("|" in clause or type(clause) == list or "?" in clause):
+            if isinstance(clause, str):
+                if "|" in clause or "?" in clause:
+                    raise TypeError(syntaxMsg)
+            if isinstance(clause, list):
                 raise TypeError(syntaxMsg)

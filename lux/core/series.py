@@ -16,29 +16,58 @@ import pandas as pd
 import lux
 import warnings
 import traceback
+import numpy as np
+from lux.history.history import History
+from lux.utils.message import Message
 
 
 class LuxSeries(pd.Series):
+    """
+    A subclass of pd.Series that supports all 1-D Series operations
+    """
+
     _metadata = [
         "_intent",
-        "data_type_lookup",
-        "data_type",
-        "data_model_lookup",
-        "data_model",
+        "_inferred_intent",
+        "_data_type",
         "unique_values",
         "cardinality",
         "_rec_info",
-        "_pandas_only",
         "_min_max",
-        "plot_config",
+        "plotting_style",
         "_current_vis",
         "_widget",
         "_recommendation",
         "_prev",
         "_history",
         "_saved_export",
-        "name",
+        "_sampled",
+        "_toggle_pandas_display",
+        "_message",
+        "_pandas_only",
+        "pre_aggregated",
+        "_type_override",
     ]
+
+    _default_metadata = {
+        "_intent": list,
+        "_inferred_intent": list,
+        "_current_vis": list,
+        "_recommendation": list,
+        "_toggle_pandas_display": lambda: True,
+        "_pandas_only": lambda: False,
+        "_type_override": dict,
+        "_history": History,
+        "_message": Message,
+    }
+
+    def __init__(self, *args, **kw):
+        super(LuxSeries, self).__init__(*args, **kw)
+        for attr in self._metadata:
+            if attr in self._default_metadata:
+                self.__dict__[attr] = self._default_metadata[attr]()
+            else:
+                self.__dict__[attr] = None
 
     @property
     def _constructor(self):
@@ -51,19 +80,27 @@ class LuxSeries(pd.Series):
         def f(*args, **kwargs):
             df = LuxDataFrame(*args, **kwargs)
             for attr in self._metadata:
+                # if attr in self._default_metadata:
+                #     default = self._default_metadata[attr]
+                # else:
+                #     default = None
                 df.__dict__[attr] = getattr(self, attr, None)
             return df
 
-        f._get_axis_number = super(LuxSeries, self)._get_axis_number
+        f._get_axis_number = LuxDataFrame._get_axis_number
         return f
 
-    def to_pandas(self):
+    def to_pandas(self) -> pd.Series:
+        """
+        Convert Lux Series to Pandas Series
+
+        Returns
+        -------
+        pd.Series
+        """
         import lux.core
 
         return lux.core.originalSeries(self, copy=False)
-
-    def display_pandas(self):
-        return self.to_pandas()
 
     def __repr__(self):
         from IPython.display import display
@@ -78,7 +115,13 @@ class LuxSeries(pd.Series):
         ldf = LuxDataFrame(self)
 
         try:
-            if ldf._pandas_only:
+            # Ignore recommendations when Series a results of:
+            # 1) Values of the series are of dtype objects (df.dtypes)
+            is_dtype_series = all(isinstance(val, np.dtype) for val in self.values)
+            # 2) Mixed type, often a result of a "row" acting as a series (df.iterrows, df.iloc[0])
+            # Tolerant for NaNs + 1 type
+            mixed_dtype = len(set([type(val) for val in self.values])) > 2
+            if ldf._pandas_only or is_dtype_series or mixed_dtype:
                 print(series_repr)
                 ldf._pandas_only = False
             else:
@@ -157,5 +200,18 @@ class LuxSeries(pd.Series):
                 stacklevel=2,
             )
             warnings.warn(traceback.format_exc())
-            display(self.display_pandas())
+            display(self.to_pandas())
         return ""
+
+    @property
+    def recommendation(self):
+        from lux.core.frame import LuxDataFrame
+
+        if self.name is None:
+            self.name = " "
+        ldf = LuxDataFrame(self)
+
+        if self._recommendation is not None and self._recommendation == {}:
+            ldf.maintain_metadata()
+            ldf.maintain_recs()
+        return ldf._recommendation
