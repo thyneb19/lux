@@ -94,7 +94,7 @@ class PandasExecutor(Executor):
             # TODO: Add some type of cap size on Nrows ?
             vis._vis_data = vis.data[list(attributes)]
 
-            if vis.mark == "bar" or vis.mark == "line":
+            if vis.mark == "bar" or vis.mark == "line" or vis.mark == "geographical":
                 PandasExecutor.execute_aggregate(vis, isFiltered=filter_executed)
             elif vis.mark == "histogram":
                 PandasExecutor.execute_binning(vis)
@@ -163,6 +163,7 @@ class PandasExecutor(Executor):
 
                 vis._vis_data = vis.data.reset_index()
                 # if color is specified, need to group by groupby_attr and color_attr
+
                 if has_color:
                     vis._vis_data = (
                         vis.data.groupby(
@@ -281,10 +282,10 @@ class PandasExecutor(Executor):
             series = vis.data[bin_attr].dropna()
             # TODO:binning runs for name attribte. Name attribute has datatype quantitative which is wrong.
             counts, bin_edges = np.histogram(series, bins=bin_attribute.bin_size)
-            # bin_edges of size N+1, so need to compute bin_center as the bin location
-            bin_center = np.mean(np.vstack([bin_edges[0:-1], bin_edges[1:]]), axis=0)
+            # bin_edges of size N+1, so need to compute bin_start as the bin location
+            bin_start = bin_edges[0:-1]
             # TODO: Should vis.data be a LuxDataFrame or a Pandas DataFrame?
-            binned_result = np.array([bin_center, counts]).T
+            binned_result = np.array([bin_start, counts]).T
             vis._vis_data = pd.DataFrame(binned_result, columns=[bin_attr, "Number of Records"])
 
     @staticmethod
@@ -371,7 +372,7 @@ class PandasExecutor(Executor):
                             (color_attr.attribute, lambda x: pd.Series.mode(x).iat[0]),
                         ]
                     ).reset_index()
-                elif color_attr.data_type == "quantitative":
+                elif color_attr.data_type == "quantitative" or color_attr.data_type == "temporal":
                     # Compute the average of all values in the bin
                     result = groups.agg(
                         [("count", "count"), (color_attr.attribute, "mean")]
@@ -417,6 +418,8 @@ class PandasExecutor(Executor):
                     ldf._data_type[attr] = "temporal"
                 elif self._is_datetime_number(ldf[attr]):
                     ldf._data_type[attr] = "temporal"
+                elif self._is_geographical_attribute(ldf[attr]):
+                    ldf._data_type[attr] = "geographical"
                 elif pd.api.types.is_float_dtype(ldf.dtypes[attr]):
                     # int columns gets coerced into floats if contain NaN
                     convertible2int = pd.api.types.is_integer_dtype(ldf[attr].convert_dtypes())
@@ -491,8 +494,14 @@ class PandasExecutor(Executor):
         return False
 
     @staticmethod
+    def _is_geographical_attribute(series):
+        # run detection algorithm
+        name = str(series.name).lower()
+        return utils.like_geo(name)
+
+    @staticmethod
     def _is_datetime_number(series):
-        if series.dtype == int:
+        if series.dtype == int or "int" in str(series.dtype):
             try:
                 temp = series.astype(str)
                 pd.to_datetime(temp)
@@ -506,6 +515,7 @@ class PandasExecutor(Executor):
         ldf.unique_values = {}
         ldf._min_max = {}
         ldf.cardinality = {}
+        ldf.length = len(ldf)
 
         for attribute in ldf.columns:
 

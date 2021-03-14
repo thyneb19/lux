@@ -343,6 +343,7 @@ class Config:
             connection : SQLAlchemy connectable, str, or sqlite3 connection
                 For more information, `see here <https://docs.sqlalchemy.org/en/13/core/connections.html>`__
         """
+        self.set_executor_type("SQL")
         self.SQLconnection = connection
 
     def set_executor_type(self, exe):
@@ -358,9 +359,10 @@ class Config:
             from lux.executor.SQLExecutor import SQLExecutor
 
             self.executor = SQLExecutor()
-        else:
+        elif exe == "Pandas":
             from lux.executor.PandasExecutor import PandasExecutor
 
+            self.SQLconnection = ""
             self.executor = PandasExecutor()
 
 

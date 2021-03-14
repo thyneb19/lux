@@ -61,7 +61,7 @@ def univariate(ldf, *args):
             "long_description": f"Distribution displays univariate histogram distributions of all quantitative attributes{examples}. Visualizations are ranked from most to least skewed.",
         }
         # Doesn't make sense to generate a histogram if there is less than 5 datapoints (pre-aggregated)
-        if len(ldf) < 5:
+        if ldf.length < 5:
             ignore_rec_flag = True
     elif data_type_constraint == "nominal":
         possible_attributes = [
@@ -79,6 +79,22 @@ def univariate(ldf, *args):
             "description": "Show frequency of occurrence for <p class='highlight-descriptor'>categorical</p> attributes.",
             "long_description": f"Occurence displays bar charts of counts for all categorical attributes{examples}. Visualizations are ranked from most to least uneven across the bars. ",
         }
+    elif data_type_constraint == "geographical":
+        possible_attributes = [
+            c
+            for c in ldf.columns
+            if ldf.data_type[c] == "geographical" and ldf.cardinality[c] > 5 and c != "Number of Records"
+        ]
+        examples = ""
+        if len(possible_attributes) >= 1:
+            examples = f" (e.g., {possible_attributes[0]})"
+        intent = [lux.Clause("?", data_type="geographical"), lux.Clause("?", data_model="measure")]
+        intent.extend(filter_specs)
+        recommendation = {
+            "action": "Geographical",
+            "description": "Show choropleth maps of <p class='highlight-descriptor'>geographic</p> attributes",
+            "long_description": f"Occurence displays choropleths of averages for some geographic attribute{examples}. Visualizations are ranked by diversity of the geographic attribute.",
+        }
     elif data_type_constraint == "temporal":
         intent = [lux.Clause("?", data_type="temporal")]
         intent.extend(filter_specs)
@@ -88,7 +104,7 @@ def univariate(ldf, *args):
             "long_description": "Temporal displays line charts for all attributes related to datetimes in the dataframe.",
         }
         # Doesn't make sense to generate a line chart if there is less than 3 datapoints (pre-aggregated)
-        if len(ldf) < 3:
+        if ldf.length < 3:
             ignore_rec_flag = True
     if ignore_rec_flag:
         recommendation["collection"] = []
