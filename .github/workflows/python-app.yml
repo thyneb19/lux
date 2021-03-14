@@ -23,13 +23,13 @@ jobs:
         image: postgres
         # Provide the password for postgres
         env:
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: lux
+          POSTGRES_DB: postgres
         # Set health checks to wait until postgres has started
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        ports:
+          - 5432:5432
 
     steps:
     - uses: actions/checkout@v2
@@ -37,14 +37,6 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: 3.7
-    - name: Set up Postgres Database
-      run: |
-        psql -c "ALTER USER postgres WITH PASSWORD 'lux';" -U postgres 
-        psql -c "ALTER USER postgres WITH SUPERUSER;" -U postgres
-        psql -c "ALTER DATABASE postgres OWNER TO travis;"
-        psql -c "DROP schema public cascade;" -U postgres
-        psql -c "CREATE schema public;" -U postgres
-        psql -c "CREATE DATABASE postgres;" -U postgres
     - name: Upload data to Postgres
       run: |
         python -m lux/data/upload_car_data.py
