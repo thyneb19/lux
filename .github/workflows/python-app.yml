@@ -39,8 +39,8 @@ jobs:
         python-version: 3.7
     - name: Upload data to Postgres
       run: |
-        python -m lux/data/upload_car_data.py
-        python -m lux/data/upload_aug_test_data.py
+        python lux/data/upload_car_data.py
+        python lux/data/upload_aug_test_data.py
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
